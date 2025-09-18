@@ -18,6 +18,7 @@
 
   <h3>Professional Excel Processing Tool</h3>
   <p>Efficiently combine student-counsellor data from multiple Excel files with advanced formatting and download capabilities</p>
+  <p>Now with robust counsellor email & phone support, hyperlink extraction, and bug fixes.</p>
   
 [![Live Demo](https://img.shields.io/badge/Live-Demo-2563eb?style=for-the-badge&logo=vercel)](https://combined-counsellor-data-rvce.vercel.app)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://reactjs.org/)
@@ -35,6 +36,13 @@ The RVCE Counsellor Data Combiner is a sophisticated web-based tool designed spe
 
 ## Key Features
 
+### 🆕 Enhancements in this Fork
+- Added **Counsellor Phone Number** column in output Excel  
+- Robust header alias mapping (handles typos, spacing, counselor vs counsellor, etc.)  
+- Improved email & phone extraction (supports `mailto:` and `tel:` hyperlinks, fuzzy phone formats)  
+- Fixed Excel warnings for phone numbers stored as text  
+
+
 ### 🔄 **Multi-Year Data Processing**
 - **Year 4 (2022-2026)** - Final year students
 - **Year 3 (2023-2027)** - Third year students  
@@ -45,6 +53,9 @@ The RVCE Counsellor Data Combiner is a sophisticated web-based tool designed spe
 - **Rich Text Processing** - Handles complex Excel formatting and rich text objects
 - **Formula Recognition** - Processes Excel formulas and their results
 - **Branch Normalization** - Standardizes department names across all files
+- **Robust Header Aliasing** - Flexible mapping for misspellings, spacing, and punctuation in Excel headers
+- **Hyperlink Processing** - Handles both mailto: and tel: links
+- **Bug Fixes** - Improved error handling and column alignment warnings resolved
 
 ### **Professional Output Formatting**
 - **RVCE Logo Integration** - Embedded institutional branding
