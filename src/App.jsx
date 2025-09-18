@@ -705,11 +705,18 @@ const App = () => {
       <div className="bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
           <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-6">
-            <img 
-              src="https://csitss.ieee-rvce.org/Logo3.png" 
-              alt="RVCE Logo" 
-              className="h-12 sm:h-16 w-auto"
-            />
+            <a 
+              href="https://rvce.edu.in/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="transition-transform duration-200 hover:scale-105"
+            >
+              <img 
+                src="https://csitss.ieee-rvce.org/Logo3.png" 
+                alt="RVCE Logo" 
+                className="h-12 sm:h-16 w-auto"
+              />
+            </a>
             <div className="text-center sm:text-left">
               <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
                 Counsellor Data Combiner
@@ -868,11 +875,18 @@ const App = () => {
       <div className="bg-white border-t border-gray-100 mt-6 sm:mt-12">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           <div className="flex flex-col items-center space-y-3 sm:space-y-4">
-            <img 
-              src="https://avatars.githubusercontent.com/u/54234255?v=4" 
-              alt="Coding Club Logo" 
-              className="h-16 w-16 sm:h-24 sm:w-24 rounded-xl sm:rounded-2xl shadow-lg"
-            />
+            <a 
+              href="https://www.linkedin.com/company/coding-club-rvce" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="transition-transform duration-200 hover:scale-105"
+            >
+              <img 
+                src="https://avatars.githubusercontent.com/u/54234255?v=4" 
+                alt="Coding Club Logo" 
+                className="h-16 w-16 sm:h-24 sm:w-24 rounded-xl sm:rounded-2xl shadow-lg"
+              />
+            </a>
             <div className="text-center">
               <p className="text-base sm:text-lg font-semibold text-gray-900">Coding Club RVCE</p>
             </div>
