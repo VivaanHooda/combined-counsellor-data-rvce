@@ -19,8 +19,12 @@
   <h3>Professional Excel Processing Tool</h3>
   <p>Efficiently combine student-counsellor data from multiple Excel files with advanced formatting and download capabilities</p>
   
-  [![Live Demo](https://img.shields.io/badge/Live-Demo-blue?style=for-the-badge&logo=vercel)](https://counsellors-rvce.vercel.app)
-  [![Made with React](https://img.shields.io/badge/Made%20with-React-61DAFB?style=for-the-badge&logo=react)](https://reactjs.org/)
+[![Live Demo](https://img.shields.io/badge/Live-Demo-2563eb?style=for-the-badge&logo=vercel)](https://counsellors-rvce.vercel.app)
+[![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://reactjs.org/)
+[![ExcelJS](https://img.shields.io/badge/ExcelJS-4.4.0-217346?style=for-the-badge&logo=microsoftexcel)](https://github.com/exceljs/exceljs)
+[![Vite](https://img.shields.io/badge/Vite-5.0-646CFF?style=for-the-badge&logo=vite)](https://vitejs.dev/)
+[![TailwindCSS](https://img.shields.io/badge/Tailwind-CSS-06B6D4?style=for-the-badge&logo=tailwindcss)](https://tailwindcss.com/)
+[![Lucide](https://img.shields.io/badge/Lucide-React-F56565?style=for-the-badge&logo=lucide)](https://lucide.dev/)
 </div>
 
 ---
