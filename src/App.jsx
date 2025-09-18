@@ -689,10 +689,23 @@ const App = () => {
     }
   };
 
-  // File upload handler
+  // File upload handler with internal filename mapping
   const handleFileUpload = (yearKey, file) => {
     if (file && file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
-      setFiles(prev => ({ ...prev, [yearKey]: file }));
+      // Create a new file object with the expected filename based on the year key
+      const expectedFilenames = {
+        'year4': 'STUDENT-COUNSELLOR INFO YEAR 4 (2022-2026 Batch).xlsx',
+        'year3': 'STUDENT-COUNSELLOR INFO YEAR 3 (2023 to 2027 Batch).xlsx',
+        'year2': 'STUDENT-COUNSELLOR INFO YEAR 2 (2024-2028 Batch).xlsx'
+      };
+      
+      // Create a new File object with the correct internal name
+      const renamedFile = new File([file], expectedFilenames[yearKey], {
+        type: file.type,
+        lastModified: file.lastModified
+      });
+      
+      setFiles(prev => ({ ...prev, [yearKey]: renamedFile }));
       setError('');
     } else {
       setError('Please upload only .xlsx files');
