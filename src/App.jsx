@@ -88,7 +88,7 @@ const App = () => {
     'COUNSELLOR MAIL ID': 'Counsellor Email',
     'COUNSELLOR E MAIL': 'Counsellor Email',
     'E-MAIL ID OF THE COUNSELLORS': 'Counsellor Email',
-    'EMAIL ID': 'Email', // fallback general
+    //'EMAIL ID': 'Email', // fallback general
 
     // Counsellor PHONE (NEW)
     'COUNSELLOR PHONE': 'Counsellor Phone',
