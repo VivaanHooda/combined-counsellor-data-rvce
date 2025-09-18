@@ -1,92 +1,5 @@
-// Aggressive Excel cell value extraction - brute force hyperlink fixing
-  const extractCellValue = (cellValue) => {
-    if (cellValue === null || cellValue === undefined) {
-      return '';
-    }
-    
-    // If it's already a simple value
-    if (typeof cellValue !== 'object') {
-      return String(cellValue).trim();
-    }
-    
-    // Handle Excel Date objects
-    if (cellValue instanceof Date) {
-      return cellValue.toLocaleDateString();
-    }
-    
-    // AGGRESSIVE HYPERLINK EXTRACTION - try everything
-    if (cellValue && typeof cellValue === 'object') {
-      
-      // Method 1: Direct text property
-      if (cellValue.text && typeof cellValue.text === 'string') {
-        return cellValue.text.trim();
-      }
-      
-      // Method 2: Hyperlink object with text
-      if (cellValue.hyperlink) {
-        if (typeof cellValue.hyperlink === 'string') {
-          return cellValue.hyperlink.replace('mailto:', '').trim();
-        }
-        if (cellValue.hyperlink.text) {
-          return cellValue.hyperlink.text.trim();
-        }
-        if (cellValue.hyperlink.target) {
-          return cellValue.hyperlink.target.replace('mailto:', '').trim();
-        }
-      }
-      
-      // Method 3: Rich text arrays
-      if (cellValue.richText && Array.isArray(cellValue.richText)) {
-        return cellValue.richText.map(rt => rt.text || '').join('').trim();
-      }
-      
-      // Method 4: Formula results
-      if (cellValue.result !== undefined) {
-        return String(cellValue.result).trim();
-      }
-      
-      // Method 5: Value property
-      if (cellValue.value !== undefined) {
-        return String(cellValue.value).trim();
-      }
-      
-      // Method 6: BRUTE FORCE - scan all object properties for email-like strings
-      const objStr = JSON.stringify(cellValue);
-      const emailMatch = objStr.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-      if (emailMatch) {
-        return emailMatch[0].trim();
-      }
-      
-      // Method 7: Look for any string property that contains @
-      for (const key in cellValue) {
-        if (cellValue.hasOwnProperty(key)) {
-          const prop = cellValue[key];
-          if (typeof prop === 'string' && prop.includes('@')) {
-            return prop.replace('mailto:', '').trim();
-          }
-          // Check nested objects
-          if (typeof prop === 'object' && prop !== null) {
-            for (const nestedKey in prop) {
-              if (prop.hasOwnProperty(nestedKey)) {
-                const nestedProp = prop[nestedKey];
-                if (typeof nestedProp === 'string' && nestedProp.includes('@')) {
-                  return nestedProp.replace('mailto:', '').trim();
-                }
-              }
-            }
-          }
-        }
-      }
-      
-      // Method 8: Try toString if it's not [object Object]
-      if (cellValue.toString && cellValue.toString() !== '[object Object]') {
-        return String(cellValue).trim();
-      }
-    }
-    
-    return '';
-  };import React, { useState, useEffect } from 'react';
-import { Upload, Download, FileText, CheckCircle, AlertCircle, Loader } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Upload, Download, FileText, CheckCircle, AlertCircle, Loader, Menu, X } from 'lucide-react';
 import ExcelJS from 'exceljs';
 
 const App = () => {
@@ -100,6 +13,7 @@ const App = () => {
   const [statistics, setStatistics] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Auto-clear messages
   useEffect(() => {
@@ -787,20 +701,20 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif' }}>
-      {/* Header with RVCE Logo */}
-      <div className="bg-white border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-6 py-6">
-          <div className="flex items-center justify-center">
+      {/* Header with RVCE Logo - Fully Responsive */}
+      <div className="bg-white border-b border-gray-100 shadow-sm">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
+          <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-6">
             <img 
               src="https://csitss.ieee-rvce.org/Logo3.png" 
               alt="RVCE Logo" 
-              className="h-16 w-auto"
+              className="h-12 sm:h-16 w-auto"
             />
-            <div className="ml-6">
-              <h1 className="text-2xl font-semibold text-gray-900">
+            <div className="text-center sm:text-left">
+              <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
                 Counsellor Data Combiner
               </h1>
-              <p className="text-gray-500 mt-1">
+              <p className="text-gray-500 mt-1 text-sm sm:text-base">
                 R.V. College of Engineering
               </p>
             </div>
@@ -808,22 +722,23 @@ const App = () => {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 max-w-4xl mx-auto px-6 py-12">
+      {/* Main Content - Responsive */}
+      <div className="flex-1 max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-12 w-full">
         
-        {/* File Upload Section */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-8 text-center">
+        {/* File Upload Section - Mobile Optimized */}
+        <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-8 mb-6 sm:mb-8">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 sm:mb-8 text-center">
             Upload Excel Files
           </h2>
           
-          <div className="grid md:grid-cols-3 gap-6">
+          {/* Mobile: Stack cards vertically, Desktop: 3-column grid */}
+          <div className="flex flex-col sm:grid sm:grid-cols-3 gap-4 sm:gap-6">
             {[
               { key: 'year4', label: 'Year 4', sublabel: '2022-2026', color: 'from-red-500 to-pink-500' },
               { key: 'year3', label: 'Year 3', sublabel: '2023-2027', color: 'from-yellow-500 to-orange-500' },
               { key: 'year2', label: 'Year 2', sublabel: '2024-2028', color: 'from-green-500 to-emerald-500' }
             ].map(({ key, label, sublabel, color }) => (
-              <div key={key} className="group">
+              <div key={key} className="group w-full">
                 <div className="relative">
                   <input
                     type="file"
@@ -834,37 +749,37 @@ const App = () => {
                   />
                   <label
                     htmlFor={`file-${key}`}
-                    className="block cursor-pointer"
+                    className="block cursor-pointer w-full"
                   >
-                    <div className="bg-white border border-gray-200 rounded-2xl p-6 hover:border-gray-300 transition-all duration-200 hover:shadow-md group-hover:scale-105">
+                    <div className="bg-white border border-gray-200 rounded-xl sm:rounded-2xl p-4 sm:p-6 hover:border-gray-300 transition-all duration-200 hover:shadow-md group-hover:scale-105 min-h-[120px] sm:min-h-[140px] flex flex-col justify-center">
                       <div className="text-center">
-                        <div className={`w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-r ${color} flex items-center justify-center`}>
+                        <div className={`w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-3 sm:mb-4 rounded-xl sm:rounded-2xl bg-gradient-to-r ${color} flex items-center justify-center`}>
                           {files[key] ? (
-                            <CheckCircle className="w-8 h-8 text-white" />
+                            <CheckCircle className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                           ) : (
-                            <FileText className="w-8 h-8 text-white" />
+                            <FileText className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                           )}
                         </div>
-                        <h3 className="font-semibold text-gray-900 mb-1">{label}</h3>
-                        <p className="text-sm text-gray-500 mb-4">{sublabel}</p>
+                        <h3 className="font-semibold text-gray-900 mb-1 text-sm sm:text-base">{label}</h3>
+                        <p className="text-xs sm:text-sm text-gray-500 mb-3 sm:mb-4">{sublabel}</p>
                         
                         {files[key] ? (
-                          <div className="space-y-3">
+                          <div className="space-y-2 sm:space-y-3">
                             <div 
                               className="flex items-center justify-center text-green-600 mb-2"
                               title={files[key].name} // Tooltip with filename on hover
                             >
-                              <CheckCircle className="w-6 h-6" />
+                              <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6" />
                             </div>
                             <label
                               htmlFor={`file-${key}`}
-                              className="block bg-blue-50 hover:bg-blue-100 text-blue-600 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer text-center"
+                              className="block bg-blue-50 hover:bg-blue-100 text-blue-600 px-3 py-2 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 cursor-pointer text-center"
                             >
                               Change File
                             </label>
                           </div>
                         ) : (
-                          <div className="text-sm text-blue-600 font-medium">
+                          <div className="text-xs sm:text-sm text-blue-600 font-medium">
                             Choose File
                           </div>
                         )}
@@ -876,16 +791,16 @@ const App = () => {
             ))}
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex justify-center mt-8 space-x-4">
+          {/* Action Buttons - Responsive */}
+          <div className="flex flex-col sm:flex-row justify-center mt-6 sm:mt-8 space-y-3 sm:space-y-0 sm:space-x-4">
             <button
               onClick={combineFiles}
               disabled={processing || (!files.year2 && !files.year3 && !files.year4)}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white px-8 py-3 rounded-full font-semibold transition-all duration-200 hover:scale-105 disabled:hover:scale-100 shadow-sm hover:shadow-md flex items-center"
+              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white px-6 sm:px-8 py-3 rounded-full font-semibold transition-all duration-200 hover:scale-105 disabled:hover:scale-100 shadow-sm hover:shadow-md flex items-center justify-center text-sm sm:text-base"
             >
               {processing ? (
                 <>
-                  <Loader className="w-5 h-5 mr-2 animate-spin" />
+                  <Loader className="w-4 h-4 sm:w-5 sm:h-5 mr-2 animate-spin" />
                   Processing...
                 </>
               ) : (
@@ -896,69 +811,70 @@ const App = () => {
             {combinedData && (
               <button
                 onClick={downloadExcel}
-                className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-full font-semibold transition-all duration-200 hover:scale-105 shadow-sm hover:shadow-md flex items-center"
+                className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white px-6 sm:px-8 py-3 rounded-full font-semibold transition-all duration-200 hover:scale-105 shadow-sm hover:shadow-md flex items-center justify-center text-sm sm:text-base"
               >
-                <Download className="w-5 h-5 mr-2" />
+                <Download className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
                 Download Excel
               </button>
             )}
           </div>
         </div>
 
-        {/* Statistics */}
+        {/* Statistics - Mobile Optimized */}
         {statistics && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-6 text-center">
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-8 mb-6 sm:mb-8">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4 sm:mb-6 text-center">
               Processing Summary
             </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            {/* Mobile: 2x2 grid, Desktop: 4-column grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6">
               <div className="text-center">
-                <div className="text-3xl font-bold text-blue-600 mb-1">{statistics.totalFiles}</div>
-                <div className="text-sm text-gray-500">Files</div>
+                <div className="text-2xl sm:text-3xl font-bold text-blue-600 mb-1">{statistics.totalFiles}</div>
+                <div className="text-xs sm:text-sm text-gray-500">Files</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-green-600 mb-1">{statistics.totalSheets}</div>
-                <div className="text-sm text-gray-500">Sheets</div>
+                <div className="text-2xl sm:text-3xl font-bold text-green-600 mb-1">{statistics.totalSheets}</div>
+                <div className="text-xs sm:text-sm text-gray-500">Sheets</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-purple-600 mb-1">{statistics.totalRecords}</div>
-                <div className="text-sm text-gray-500">Records</div>
+                <div className="text-2xl sm:text-3xl font-bold text-purple-600 mb-1">{statistics.totalRecords}</div>
+                <div className="text-xs sm:text-sm text-gray-500">Records</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-orange-600 mb-1">{statistics.branchesProcessed.length}</div>
-                <div className="text-sm text-gray-500">Branches</div>
+                <div className="text-2xl sm:text-3xl font-bold text-orange-600 mb-1">{statistics.branchesProcessed.length}</div>
+                <div className="text-xs sm:text-sm text-gray-500">Branches</div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Messages */}
+        {/* Messages - Mobile Optimized */}
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-6 flex items-center">
-            <AlertCircle className="w-5 h-5 text-red-500 mr-3" />
-            <span className="text-red-700">{error}</span>
+          <div className="bg-red-50 border border-red-200 rounded-xl sm:rounded-2xl p-3 sm:p-4 mb-4 sm:mb-6 flex items-start sm:items-center">
+            <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-red-500 mr-2 sm:mr-3 flex-shrink-0 mt-0.5 sm:mt-0" />
+            <span className="text-red-700 text-sm sm:text-base break-words">{error}</span>
           </div>
         )}
 
         {success && (
-          <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6 flex items-center">
-            <CheckCircle className="w-5 h-5 text-green-500 mr-3" />
-            <span className="text-green-700">{success}</span>
+          <div className="bg-green-50 border border-green-200 rounded-xl sm:rounded-2xl p-3 sm:p-4 mb-4 sm:mb-6 flex items-start sm:items-center">
+            <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-green-500 mr-2 sm:mr-3 flex-shrink-0 mt-0.5 sm:mt-0" />
+            <span className="text-green-700 text-sm sm:text-base break-words">{success}</span>
           </div>
         )}
       </div>
 
-      {/* Footer with Coding Club Logo */}
-      <div className="bg-white border-t border-gray-100 mt-12">
-        <div className="max-w-4xl mx-auto px-6 py-8">
-          <div className="flex flex-col items-center space-y-4">
+      {/* Footer with Coding Club Logo - Mobile Optimized */}
+      <div className="bg-white border-t border-gray-100 mt-6 sm:mt-12">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+          <div className="flex flex-col items-center space-y-3 sm:space-y-4">
             <img 
               src="https://avatars.githubusercontent.com/u/54234255?v=4" 
               alt="Coding Club Logo" 
-              className="h-24 w-24 rounded-2xl shadow-lg"
+              className="h-16 w-16 sm:h-24 sm:w-24 rounded-xl sm:rounded-2xl shadow-lg"
             />
             <div className="text-center">
-              <p className="text-lg font-semibold text-gray-900">Coding Club RVCE</p>
+              <p className="text-base sm:text-lg font-semibold text-gray-900">Coding Club RVCE</p>
             </div>
           </div>
         </div>
