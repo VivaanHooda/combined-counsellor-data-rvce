@@ -1,9 +1,95 @@
-import React, { useState } from 'react';
-import { Upload, Download, FileSpreadsheet, Home, Users, Eye, AlertCircle, CheckCircle, Loader, Table, Grid3X3 } from 'lucide-react';
+// Aggressive Excel cell value extraction - brute force hyperlink fixing
+  const extractCellValue = (cellValue) => {
+    if (cellValue === null || cellValue === undefined) {
+      return '';
+    }
+    
+    // If it's already a simple value
+    if (typeof cellValue !== 'object') {
+      return String(cellValue).trim();
+    }
+    
+    // Handle Excel Date objects
+    if (cellValue instanceof Date) {
+      return cellValue.toLocaleDateString();
+    }
+    
+    // AGGRESSIVE HYPERLINK EXTRACTION - try everything
+    if (cellValue && typeof cellValue === 'object') {
+      
+      // Method 1: Direct text property
+      if (cellValue.text && typeof cellValue.text === 'string') {
+        return cellValue.text.trim();
+      }
+      
+      // Method 2: Hyperlink object with text
+      if (cellValue.hyperlink) {
+        if (typeof cellValue.hyperlink === 'string') {
+          return cellValue.hyperlink.replace('mailto:', '').trim();
+        }
+        if (cellValue.hyperlink.text) {
+          return cellValue.hyperlink.text.trim();
+        }
+        if (cellValue.hyperlink.target) {
+          return cellValue.hyperlink.target.replace('mailto:', '').trim();
+        }
+      }
+      
+      // Method 3: Rich text arrays
+      if (cellValue.richText && Array.isArray(cellValue.richText)) {
+        return cellValue.richText.map(rt => rt.text || '').join('').trim();
+      }
+      
+      // Method 4: Formula results
+      if (cellValue.result !== undefined) {
+        return String(cellValue.result).trim();
+      }
+      
+      // Method 5: Value property
+      if (cellValue.value !== undefined) {
+        return String(cellValue.value).trim();
+      }
+      
+      // Method 6: BRUTE FORCE - scan all object properties for email-like strings
+      const objStr = JSON.stringify(cellValue);
+      const emailMatch = objStr.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+      if (emailMatch) {
+        return emailMatch[0].trim();
+      }
+      
+      // Method 7: Look for any string property that contains @
+      for (const key in cellValue) {
+        if (cellValue.hasOwnProperty(key)) {
+          const prop = cellValue[key];
+          if (typeof prop === 'string' && prop.includes('@')) {
+            return prop.replace('mailto:', '').trim();
+          }
+          // Check nested objects
+          if (typeof prop === 'object' && prop !== null) {
+            for (const nestedKey in prop) {
+              if (prop.hasOwnProperty(nestedKey)) {
+                const nestedProp = prop[nestedKey];
+                if (typeof nestedProp === 'string' && nestedProp.includes('@')) {
+                  return nestedProp.replace('mailto:', '').trim();
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      // Method 8: Try toString if it's not [object Object]
+      if (cellValue.toString && cellValue.toString() !== '[object Object]') {
+        return String(cellValue).trim();
+      }
+    }
+    
+    return '';
+  };import React, { useState, useEffect } from 'react';
+import { Upload, Download, FileText, CheckCircle, AlertCircle, Loader } from 'lucide-react';
 import ExcelJS from 'exceljs';
 
 const App = () => {
-  const [currentPage, setCurrentPage] = useState('home');
   const [files, setFiles] = useState({
     year4: null,
     year3: null,
@@ -11,18 +97,119 @@ const App = () => {
   });
   const [processing, setProcessing] = useState(false);
   const [combinedData, setCombinedData] = useState(null);
-  const [previewData, setPreviewData] = useState([]);
-  const [previewMode, setPreviewMode] = useState('table');
-  const [googleSheetUrl, setGoogleSheetUrl] = useState('');
-  const [sheetLoading, setSheetLoading] = useState(false);
   const [statistics, setStatistics] = useState(null);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  // Branch normalization mapping from Python script
+  // Auto-clear messages
+  useEffect(() => {
+    if (error || success) {
+      const timer = setTimeout(() => {
+        setError('');
+        setSuccess('');
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error, success]);
+
+  // Enhanced Excel cell value extraction specifically for emails and complex objects
+  const extractCellValue = (cellValue) => {
+    if (cellValue === null || cellValue === undefined) {
+      return '';
+    }
+    
+    // If it's already a simple value
+    if (typeof cellValue !== 'object') {
+      return String(cellValue).trim();
+    }
+    
+    // Handle Excel Date objects
+    if (cellValue instanceof Date) {
+      return cellValue.toLocaleDateString();
+    }
+    
+    // Handle Excel hyperlink objects (common for emails)
+    if (cellValue.hyperlink) {
+      // Email hyperlinks often have the email in the hyperlink property
+      if (cellValue.text) {
+        return String(cellValue.text).trim();
+      }
+      if (typeof cellValue.hyperlink === 'string') {
+        // Extract email from mailto: links
+        return cellValue.hyperlink.replace('mailto:', '').trim();
+      }
+      if (cellValue.hyperlink.text) {
+        return String(cellValue.hyperlink.text).trim();
+      }
+      return String(cellValue.hyperlink).trim();
+    }
+    
+    // Handle Excel rich text objects
+    if (cellValue.richText && Array.isArray(cellValue.richText)) {
+      return cellValue.richText.map(rt => rt.text || '').join('').trim();
+    }
+    
+    // Handle Excel formula objects
+    if (cellValue.formula !== undefined) {
+      return String(cellValue.result || cellValue.formula || '').trim();
+    }
+    
+    // Handle objects with result property
+    if (cellValue.result !== undefined) {
+      return String(cellValue.result).trim();
+    }
+    
+    // Handle objects with text property
+    if (cellValue.text !== undefined) {
+      return String(cellValue.text).trim();
+    }
+    
+    // Handle objects with value property
+    if (cellValue.value !== undefined) {
+      return String(cellValue.value).trim();
+    }
+    
+    // For any other object, try to extract meaningful content
+    if (cellValue.toString && cellValue.toString() !== '[object Object]') {
+      return String(cellValue).trim();
+    }
+    
+    // Last resort: try to find any string property in the object
+    if (typeof cellValue === 'object') {
+      for (const key in cellValue) {
+        if (typeof cellValue[key] === 'string' && cellValue[key].includes('@')) {
+          return cellValue[key].trim(); // Likely an email
+        }
+        if (typeof cellValue[key] === 'string' && cellValue[key].length > 0) {
+          return cellValue[key].trim();
+        }
+      }
+    }
+    
+    return '';
+  };
+
+  // EXACT replica of Python script's clean_value function with enhanced Excel object handling
+  const cleanValue = (value) => {
+    const extractedValue = extractCellValue(value);
+    
+    if (!extractedValue || extractedValue === '' || extractedValue === '0' || 
+        String(extractedValue).toLowerCase() === 'nan' || 
+        String(extractedValue).toLowerCase() === 'none' || 
+        String(extractedValue).toLowerCase() === 'null') {
+      return '';
+    }
+    return String(extractedValue).trim();
+  };
+
+  // EXACT replica of Python script's normalize_branch_name function
   const normalizeBranchName = (branchName) => {
     const branchMapping = {
-      'CSE(AIML)': 'Computer Science Engineering (AI & ML)',
-      'AIML': 'Artificial Intelligence & Machine Learning',
+      // AI/ML branches - distinguish between the two different programs
+      'CSE(AIML)': 'Computer Science Engineering (AI & ML)',  // Older program
+      'AIML': 'Artificial Intelligence & Machine Learning',    // New dedicated program (2024-2028)
+      
+      // Regular branches with correct names
       'CSE': 'Computer Science Engineering',
       'Data Science': 'CSE (Data Science)',
       'Cyber Security': 'CSE (Cyber Security)',
@@ -41,61 +228,139 @@ const App = () => {
     return branchMapping[branchName] || branchName;
   };
 
-  // Extract batch info from filename
-  const extractBatchInfo = (filename) => {
+  // EXACT replica of Python script's extract_batch_year function
+  const extractBatchYear = (filename) => {
     if (filename.includes('2024') && filename.includes('2028')) {
       return { batch: '2024-2028', year: 'Year 2' };
     } else if (filename.includes('2023') && filename.includes('2027')) {
       return { batch: '2023-2027', year: 'Year 3' };
     } else if (filename.includes('2022') && filename.includes('2026')) {
       return { batch: '2022-2026', year: 'Year 4' };
+    } else {
+      console.warn(`Could not extract batch year from filename: ${filename}`);
+      return { batch: 'Unknown Batch', year: 'Unknown Year' };
     }
-    return { batch: 'Unknown Batch', year: 'Unknown Year' };
   };
 
-  // Clean cell values (remove NaN, null, 0 etc.)
-  const cleanValue = (value) => {
-    if (!value || value === '' || value === 0 || 
-        String(value).toLowerCase() === 'nan' || 
-        String(value).toLowerCase() === 'none' || 
-        String(value).toLowerCase() === 'null') {
-      return '';
+  // EXACT replica of Python script's is_valid_sheet function
+  const isValidSheet = (data, sheetName) => {
+    if (!data || data.length === 0) {
+      console.warn(`Sheet '${sheetName}' is empty`);
+      return false;
     }
-    return String(value).trim();
+    
+    if (data.length < 2) {
+      console.warn(`Sheet '${sheetName}' has insufficient rows (${data.length})`);
+      return false;
+    }
+    
+    // Look for USN column indicator
+    let hasUsn = false;
+    for (const row of data) {
+      if (row.some(cell => String(cell).toUpperCase().includes('USN'))) {
+        hasUsn = true;
+        break;
+      }
+    }
+    
+    if (!hasUsn) {
+      console.warn(`Sheet '${sheetName}' does not contain USN column`);
+      return false;
+    }
+    
+    // Check if there's actual student data
+    let usnPatternFound = false;
+    for (const row of data) {
+      for (const cell of row) {
+        if (cell && typeof cell === 'string') {
+          if (cell.length > 5 && /\d/.test(cell) && /[a-zA-Z]/.test(cell)) {
+            usnPatternFound = true;
+            break;
+          }
+        }
+      }
+      if (usnPatternFound) break;
+    }
+    
+    if (!usnPatternFound) {
+      console.warn(`Sheet '${sheetName}' does not contain valid student data`);
+      return false;
+    }
+    
+    return true;
   };
 
-  // Process individual worksheet
-  const processSheet = async (worksheet, sheetName, batchYear) => {
+  // EXACT replica of Python script's process_sheet function
+  const processSheet = (worksheet, sheetName, batchYear, fileName) => {
     const data = [];
     
-    // Convert worksheet to array format
+    // Convert worksheet to array format with direct cell hyperlink access
     worksheet.eachRow((row, rowNumber) => {
       const rowData = [];
       row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-        rowData[colNumber - 1] = cell.value || '';
+        let cellValue = '';
+        
+        // DIRECT HYPERLINK CHECK - ExcelJS stores hyperlinks separately
+        if (cell.hyperlink) {
+          // Get the display text from hyperlink
+          if (cell.value && typeof cell.value === 'string') {
+            cellValue = cell.value;
+          } else if (cell.text) {
+            cellValue = cell.text;
+          } else if (typeof cell.hyperlink === 'string') {
+            cellValue = cell.hyperlink.replace('mailto:', '');
+          } else if (cell.hyperlink.text) {
+            cellValue = cell.hyperlink.text;
+          } else {
+            cellValue = String(cell.hyperlink).replace('mailto:', '');
+          }
+        } else {
+          // Regular cell value extraction
+          cellValue = extractCellValue(cell.value);
+        }
+        
+        rowData[colNumber - 1] = cellValue || '';
       });
       data.push(rowData);
     });
     
-    if (data.length <= 1) return [];
-
-    // Find header row containing 'USN'
-    let headerRow = -1;
-    for (let i = 0; i < data.length; i++) {
-      if (data[i].some(cell => String(cell).toUpperCase().includes('USN'))) {
-        headerRow = i;
+    if (data.length === 0) {
+      console.warn(`Empty sheet: ${sheetName} in ${fileName}`);
+      return [];
+    }
+    
+    if (data.length <= 1) {
+      console.warn(`Sheet ${sheetName} has insufficient data`);
+      return [];
+    }
+    
+    // Find the actual header row
+    let headerRow = null;
+    for (let idx = 0; idx < data.length; idx++) {
+      if (data[idx].some(cell => String(cell).toUpperCase().includes('USN'))) {
+        headerRow = idx;
         break;
       }
     }
-
-    if (headerRow === -1) return [];
-
+    
+    if (headerRow === null) {
+      console.warn(`No header row found in sheet: ${sheetName}`);
+      return [];
+    }
+    
+    // Set proper headers and get data
     const headers = data[headerRow];
-    const rows = data.slice(headerRow + 1).filter(row => 
-      row.some(cell => cell && String(cell).trim() !== '')
-    );
-
-    // Column mapping from Python script
+    let rows = data.slice(headerRow + 1);
+    
+    // Clean and filter data - remove empty rows
+    rows = rows.filter(row => row.some(cell => cell && String(cell).trim() !== ''));
+    
+    if (rows.length === 0) {
+      console.warn(`No valid data rows in sheet: ${sheetName}`);
+      return [];
+    }
+    
+    // EXACT replica of Python script's column mapping
     const columnMapping = {
       'USN': 'USN',
       'FULL NAME': 'Full Name',
@@ -110,38 +375,46 @@ const App = () => {
       'BATCH(20XX-20XX)': 'Batch',
       'BATCH': 'Batch'
     };
-
-    // Process rows into standardized records
+    
+    // Process rows into records
     const records = rows.map(row => {
       const record = {};
+      
+      // Map columns based on headers
       headers.forEach((header, index) => {
         const standardHeader = columnMapping[String(header).toUpperCase()] || header;
         record[standardHeader] = cleanValue(row[index]);
       });
-
-      // Ensure required fields exist
-      const requiredFields = ['USN', 'Full Name', 'Branch', 'Section', 'Email', 
-                            'Phone Number', 'Counsellor', 'Counsellor Email', 
-                            'Counsellor Department', 'Batch'];
       
-      requiredFields.forEach(field => {
-        if (!record[field]) record[field] = '';
+      // Ensure required columns exist
+      const requiredColumns = ['USN', 'Full Name', 'Branch', 'Email', 'Phone Number', 'Counsellor', 'Batch'];
+      requiredColumns.forEach(col => {
+        if (!record[col]) record[col] = '';
       });
-
-      // Add normalized fields
-      record['Student Branch'] = normalizeBranchName(record['Branch'] || '');
-      record['Student Batch'] = record['Batch'] || batchYear;
-      record['Student Email ID'] = record['Email'] || '';
-      record['Counsellor Name'] = record['Counsellor'] || '';
-      record['Counsellor Email ID'] = record['Counsellor Email'] || '';
-
+      
+      // Add missing columns with empty values
+      const allColumns = ['USN', 'Full Name', 'Branch', 'Section', 'Email', 
+                         'Phone Number', 'Counsellor', 'Counsellor Email', 'Counsellor Department', 'Batch'];
+      allColumns.forEach(col => {
+        if (!record[col]) record[col] = '';
+      });
+      
+      // Add normalized branch name
+      record['Normalized Branch'] = normalizeBranchName(record['Branch'] || '');
+      
+      // Update batch info if missing
+      if (!record['Batch'] || record['Batch'] === '') {
+        record['Batch'] = batchYear;
+      }
+      
       return record;
     }).filter(record => record['USN'] && record['USN'] !== '');
-
+    
+    console.log(`Processed sheet '${sheetName}': ${records.length} records`);
     return records;
   };
 
-  // Main file processing function
+  // EXACT replica of Python script's main processing logic
   const combineFiles = async () => {
     if (!files.year2 && !files.year3 && !files.year4) {
       setError('Please upload at least one file');
@@ -150,6 +423,7 @@ const App = () => {
 
     setProcessing(true);
     setError('');
+    setSuccess('');
 
     try {
       const combinedRecords = [];
@@ -161,7 +435,7 @@ const App = () => {
         batchesProcessed: new Set()
       };
 
-      // Process files in chronological order (Year 4, Year 3, Year 2)
+      // EXACT replica: Process files in chronological order (Year 4, Year 3, Year 2)
       const fileOrder = [
         { key: 'year4', file: files.year4 },
         { key: 'year3', file: files.year3 },
@@ -171,51 +445,76 @@ const App = () => {
       for (const { file } of fileOrder) {
         if (!file) continue;
 
-        const batchInfo = extractBatchInfo(file.name);
+        const { batch, year } = extractBatchYear(file.name);
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.load(await file.arrayBuffer());
+        
+        console.log(`Processing file: ${file.name} (Batch: ${batch}, ${year})`);
         
         // Add batch separator
         combinedRecords.push({
           type: 'batch_separator',
-          text: `${batchInfo.batch} Batch (${batchInfo.year})`
+          text: `${batch} Batch (${year})`
         });
 
-        // Get valid sheets (exclude utility sheets)
+        // EXACT replica: Filter and validate sheets
         const validSheets = [];
         workbook.eachSheet((worksheet, sheetId) => {
           const sheetName = worksheet.name;
           
-          // Skip utility sheets
-          if (sheetName.startsWith('Sheet') && sheetName !== 'Sheet1') return;
-          if (['template', 'format', 'example', 'blank'].includes(sheetName.toLowerCase())) return;
+          // EXACT replica: Skip utility sheets
+          if ((sheetName.startsWith('Sheet') && sheetName !== 'Sheet1') || 
+              ['template', 'format', 'example', 'blank'].includes(sheetName.toLowerCase())) {
+            console.log(`Skipping utility sheet: ${sheetName}`);
+            return;
+          }
           
-          // Check if sheet has USN data
-          let hasValidData = false;
+          // Convert worksheet to data for validation with direct hyperlink access
+          const data = [];
           worksheet.eachRow((row, rowNumber) => {
-            if (rowNumber > 10) return; // Only check first 10 rows
-            row.eachCell((cell) => {
-              if (String(cell.value).toUpperCase().includes('USN')) {
-                hasValidData = true;
+            const rowData = [];
+            row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+              let cellValue = '';
+              
+              // DIRECT HYPERLINK CHECK first
+              if (cell.hyperlink) {
+                if (cell.value && typeof cell.value === 'string') {
+                  cellValue = cell.value;
+                } else if (cell.text) {
+                  cellValue = cell.text;
+                } else if (typeof cell.hyperlink === 'string') {
+                  cellValue = cell.hyperlink.replace('mailto:', '');
+                } else if (cell.hyperlink.text) {
+                  cellValue = cell.hyperlink.text;
+                } else {
+                  cellValue = String(cell.hyperlink).replace('mailto:', '');
+                }
+              } else {
+                cellValue = extractCellValue(cell.value);
               }
+              
+              rowData[colNumber - 1] = cellValue || '';
             });
+            data.push(rowData);
           });
           
-          if (hasValidData) {
+          if (isValidSheet(data, sheetName)) {
             validSheets.push({ name: sheetName, worksheet });
+          } else {
+            console.log(`Skipping invalid/empty sheet: ${sheetName}`);
           }
         });
 
-        // Sort sheets alphabetically by normalized branch names
-        validSheets.sort((a, b) => 
-          normalizeBranchName(a.name).toLowerCase().localeCompare(normalizeBranchName(b.name).toLowerCase())
-        );
+        // EXACT replica: Sort sheets alphabetically by normalized branch names
+        validSheets.sort((a, b) => {
+          const normalizedA = normalizeBranchName(a.name).toLowerCase();
+          const normalizedB = normalizeBranchName(b.name).toLowerCase();
+          return normalizedA.localeCompare(normalizedB);
+        });
 
-        // Process each valid sheet
+        let fileRecords = 0;
         for (const { name: sheetName, worksheet } of validSheets) {
-          const sheetData = await processSheet(worksheet, sheetName, batchInfo.batch);
-          
-          if (sheetData.length > 0) {
+          try {
             // Add branch separator
             const normalizedBranch = normalizeBranchName(sheetName);
             combinedRecords.push({
@@ -223,27 +522,36 @@ const App = () => {
               text: normalizedBranch
             });
 
-            // Add student records
-            combinedRecords.push(...sheetData);
-
-            // Update statistics
-            stats.branchesProcessed.add(normalizedBranch);
-            stats.totalRecords += sheetData.length;
-            stats.totalSheets++;
+            // Process the sheet
+            const sheetData = processSheet(worksheet, sheetName, batch, file.name);
+            if (sheetData.length > 0) {
+              combinedRecords.push(...sheetData);
+              fileRecords += sheetData.length;
+              
+              // Update statistics
+              stats.branchesProcessed.add(sheetName);
+              stats.totalRecords += sheetData.length;
+              stats.totalSheets += 1;
+            }
+          } catch (err) {
+            console.error(`Error processing sheet '${sheetName}' in ${file.name}: ${err.message}`);
+            continue;
           }
         }
 
-        stats.batchesProcessed.add(batchInfo.batch);
-        stats.totalFiles++;
+        stats.batchesProcessed.add(batch);
+        stats.totalFiles += 1;
+        console.log(`Completed file ${file.name}: ${fileRecords} total records`);
       }
 
       setCombinedData(combinedRecords);
-      setPreviewData(combinedRecords.slice(0, 50));
       setStatistics({
         ...stats,
         branchesProcessed: Array.from(stats.branchesProcessed),
         batchesProcessed: Array.from(stats.batchesProcessed)
       });
+
+      setSuccess('Files processed successfully! Ready to download.');
 
     } catch (err) {
       setError(`Error processing files: ${err.message}`);
@@ -252,231 +560,219 @@ const App = () => {
     }
   };
 
-  // Create Google Sheet with data
-  const createGoogleSheet = async (data) => {
-    setSheetLoading(true);
-    
-    try {
-      // Prepare data for Google Sheets
-      const sheetData = [];
-      
-      // Add logo space
-      sheetData.push(['LOGO SPACE - Insert RVCE Logo Here']);
-      for (let i = 1; i < 8; i++) {
-        sheetData.push(['']);
-      }
-      
-      // Add headers
-      const headers = [
-        'USN', 'Full Name', 'Student Branch', 'Section', 'Student Email ID',
-        'Phone Number', 'Counsellor Name', 'Counsellor Email ID',
-        'Counsellor Department', 'Student Batch'
-      ];
-      sheetData.push(headers);
-      
-      // Add data
-      data.forEach(item => {
-        if (item.type === 'batch_separator') {
-          sheetData.push([item.text]);
-          sheetData.push(['']); // Empty row
-        } else if (item.type === 'branch_separator') {
-          sheetData.push([item.text]);
-          sheetData.push(['']); // Empty row
-        } else {
-          // Student data
-          sheetData.push([
-            item.USN || '',
-            item['Full Name'] || '',
-            item['Student Branch'] || '',
-            item.Section || '',
-            item['Student Email ID'] || '',
-            item['Phone Number'] || '',
-            item['Counsellor Name'] || '',
-            item['Counsellor Email ID'] || '',
-            item['Counsellor Department'] || '',
-            item['Student Batch'] || ''
-          ]);
-        }
-      });
-
-      // Create Google Sheet via API
-      const response = await fetch('/api/create-sheet', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          data: sheetData,
-          title: `RVCE Counsellor Data - ${new Date().toISOString().split('T')[0]}`
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create Google Sheet');
-      }
-
-      const result = await response.json();
-      setGoogleSheetUrl(result.url);
-      
-    } catch (error) {
-      console.error('Error creating Google Sheet:', error);
-      setError('Failed to create Google Sheet preview. Please try table view.');
-    } finally {
-      setSheetLoading(false);
-    }
-  };
-
-  // Handle Excel view mode
-  const handleExcelViewClick = async () => {
-    setPreviewMode('excel');
-    if (combinedData && !googleSheetUrl) {
-      await createGoogleSheet(combinedData);
-    }
-  };
-
-  // Download Excel file with professional formatting
+  // EXACT replica of Python script's Excel formatting
   const downloadExcel = async () => {
     if (!combinedData) return;
 
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Combined Data');
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Combined Data');
 
-    const headers = [
-      'USN', 'Full Name', 'Student Branch', 'Section', 'Student Email ID',
-      'Phone Number', 'Counsellor Name', 'Counsellor Email ID',
-      'Counsellor Department', 'Student Batch'
-    ];
+      // EXACT replica: Professional column headers
+      const headers = [
+        'USN', 'Full Name', 'Student Branch', 'Section', 'Student Email ID', 
+        'Phone Number', 'Counsellor Name', 'Counsellor Email ID', 
+        'Counsellor Department', 'Student Batch'
+      ];
 
-    let rowIndex = 1;
+      let currentRow = 1;
 
-    // Logo space (rows 1-8) - merged cells
-    worksheet.mergeCells('A1:J8');
-    const logoCell = worksheet.getCell('A1');
-    logoCell.value = 'LOGO SPACE - Insert RVCE Logo Here';
-    logoCell.font = { size: 14, color: { argb: '666666' }, italic: true };
-    logoCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    logoCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'F8F9FA' }
-    };
-    
-    rowIndex = 9;
-
-    // Professional headers
-    worksheet.addRow(headers);
-    const headerRow = worksheet.getRow(rowIndex);
-    headerRow.eachCell((cell) => {
-      cell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 12 };
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: '366092' }
-      };
-      cell.alignment = { horizontal: 'center', vertical: 'center', wrapText: true };
-      cell.border = {
-        top: { style: 'thin', color: { argb: 'FFFFFF' } },
-        left: { style: 'thin', color: { argb: 'FFFFFF' } },
-        bottom: { style: 'thin', color: { argb: 'FFFFFF' } },
-        right: { style: 'thin', color: { argb: 'FFFFFF' } }
-      };
-    });
-    
-    rowIndex++;
-
-    // Add data with formatting
-    combinedData.forEach(item => {
-      if (item.type === 'batch_separator') {
-        // Batch separator with merged cells
-        worksheet.mergeCells(`A${rowIndex}:J${rowIndex}`);
-        const batchCell = worksheet.getCell(`A${rowIndex}`);
-        batchCell.value = item.text;
-        batchCell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 16 };
-        batchCell.fill = {
+      // EXACT replica: Row 1 - Column headers with professional styling
+      worksheet.addRow(headers);
+      const headerRow = worksheet.getRow(currentRow);
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 12 };
+        cell.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: '0B5394' }
+          fgColor: { argb: '366092' }
         };
-        batchCell.alignment = { horizontal: 'center', vertical: 'center' };
-        worksheet.getRow(rowIndex).height = 30;
-        rowIndex++;
-        rowIndex++; // Empty row
-      } else if (item.type === 'branch_separator') {
-        // Branch separator with merged cells
-        worksheet.mergeCells(`A${rowIndex}:J${rowIndex}`);
-        const branchCell = worksheet.getCell(`A${rowIndex}`);
-        branchCell.value = item.text;
-        branchCell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 14 };
-        branchCell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: '6AA84F' }
+        cell.alignment = { horizontal: 'center', vertical: 'center', wrapText: true };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFFFFF' } },
+          left: { style: 'thin', color: { argb: 'FFFFFF' } },
+          bottom: { style: 'thin', color: { argb: 'FFFFFF' } },
+          right: { style: 'thin', color: { argb: 'FFFFFF' } }
         };
-        branchCell.alignment = { horizontal: 'center', vertical: 'center' };
-        worksheet.getRow(rowIndex).height = 25;
-        rowIndex++;
-        rowIndex++; // Empty row
-      } else {
-        // Student data
-        const rowData = [
-          item.USN || '',
-          item['Full Name'] || '',
-          item['Student Branch'] || '',
-          item.Section || '',
-          item['Student Email ID'] || '',
-          item['Phone Number'] || '',
-          item['Counsellor Name'] || '',
-          item['Counsellor Email ID'] || '',
-          item['Counsellor Department'] || '',
-          item['Student Batch'] || ''
-        ];
+      });
+      currentRow++;
+
+      // EXACT replica: Row 2 - Empty row for spacing
+      worksheet.mergeCells(`A${currentRow}:J${currentRow}`);
+      currentRow++;
+
+      // EXACT replica: Rows 3-8 - Logo space with original size and centered positioning
+      worksheet.mergeCells(`A${currentRow}:J${currentRow + 5}`);
+      const logoCell = worksheet.getCell(`A${currentRow}`);
+      
+      // Fetch and add RVCE logo with original size - SAFE METHOD
+      try {
+        const logoResponse = await fetch('https://csitss.ieee-rvce.org/Logo3.png');
         
-        const dataRow = worksheet.addRow(rowData);
-        
-        // Apply alternating row colors and borders
-        dataRow.eachCell((cell, colNumber) => {
-          if (rowIndex % 2 === 0) {
-            cell.fill = {
-              type: 'pattern',
-              pattern: 'solid',
-              fgColor: { argb: 'F8F9FA' }
-            };
-          }
+        if (logoResponse.ok) {
+          const logoBuffer = await logoResponse.arrayBuffer();
           
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'E1E1E1' } },
-            left: { style: 'thin', color: { argb: 'E1E1E1' } },
-            bottom: { style: 'thin', color: { argb: 'E1E1E1' } },
-            right: { style: 'thin', color: { argb: 'E1E1E1' } }
-          };
-          
-          // Alignment based on column
-          if (colNumber === 1) {
-            cell.alignment = { horizontal: 'center', vertical: 'center' };
+          if (logoBuffer && logoBuffer.byteLength > 0) {
+            const logoId = workbook.addImage({
+              buffer: logoBuffer,
+              extension: 'png',
+            });
+
+            // Insert logo at the extreme far left
+            worksheet.addImage(logoId, {
+              tl: { col: 0.5, row: currentRow - 0.5 }, // Extreme left (column A start)
+              ext: { width: 250, height: 100 }, // Keep the size you liked
+              editAs: 'oneCell'
+            });
           } else {
-            cell.alignment = { horizontal: 'left', vertical: 'center' };
+            throw new Error('Empty logo buffer');
           }
-        });
+        } else {
+          throw new Error('Failed to fetch logo');
+        }
         
-        rowIndex++;
+        // Set the merged cell background to complement the logo
+        logoCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFFFF' }
+        };
+        logoCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        
+      } catch (logoError) {
+        console.warn('Logo insertion failed:', logoError.message);
+        // Fallback to text if logo fails
+        logoCell.value = 'RVCE LOGO SPACE';
+        logoCell.font = { size: 16, color: { argb: '2563eb' }, bold: true };
+        logoCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        logoCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'F8F9FA' }
+        };
       }
-    });
+      
+      currentRow += 6; // Skip logo space (rows 3-8)
 
-    // Set professional column widths
-    const columnWidths = [15, 30, 35, 10, 40, 15, 25, 40, 20, 15];
-    columnWidths.forEach((width, index) => {
-      worksheet.getColumn(index + 1).width = width;
-    });
+      // EXACT replica: Add data with formatting
+      combinedData.forEach(item => {
+        if (item.type === 'batch_separator') {
+          // EXACT replica: Batch separator with merged cells
+          worksheet.mergeCells(`A${currentRow}:J${currentRow}`);
+          const batchCell = worksheet.getCell(`A${currentRow}`);
+          batchCell.value = item.text;
+          batchCell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 16 };
+          batchCell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: '0B5394' }
+          };
+          batchCell.alignment = { horizontal: 'center', vertical: 'center' };
+          batchCell.border = {
+            top: { style: 'thick', color: { argb: 'FFFFFF' } },
+            left: { style: 'thick', color: { argb: 'FFFFFF' } },
+            bottom: { style: 'thick', color: { argb: 'FFFFFF' } },
+            right: { style: 'thick', color: { argb: 'FFFFFF' } }
+          };
+          worksheet.getRow(currentRow).height = 30;
+          currentRow++;
+          currentRow++; // Empty row after batch separator
+        } else if (item.type === 'branch_separator') {
+          // EXACT replica: Branch separator with merged cells
+          worksheet.mergeCells(`A${currentRow}:J${currentRow}`);
+          const branchCell = worksheet.getCell(`A${currentRow}`);
+          branchCell.value = item.text;
+          branchCell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 14 };
+          branchCell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: '6AA84F' }
+          };
+          branchCell.alignment = { horizontal: 'center', vertical: 'center' };
+          branchCell.border = {
+            top: { style: 'medium', color: { argb: 'FFFFFF' } },
+            left: { style: 'medium', color: { argb: 'FFFFFF' } },
+            bottom: { style: 'medium', color: { argb: 'FFFFFF' } },
+            right: { style: 'medium', color: { argb: 'FFFFFF' } }
+          };
+          worksheet.getRow(currentRow).height = 25;
+          currentRow++;
+          currentRow++; // Empty row after branch separator
+        } else {
+          // EXACT replica: Student data with clean formatting
+          const rowData = [
+            cleanValue(item['USN']),
+            cleanValue(item['Full Name']),
+            cleanValue(item['Normalized Branch']),  // Student Branch
+            cleanValue(item['Section']),
+            cleanValue(item['Email']),  // Student Email ID
+            cleanValue(item['Phone Number']),
+            cleanValue(item['Counsellor']),  // Counsellor Name
+            cleanValue(item['Counsellor Email']),  // Counsellor Email ID
+            cleanValue(item['Counsellor Department']),
+            cleanValue(item['Batch'])  // Student Batch
+          ];
+          
+          const dataRow = worksheet.addRow(rowData);
+          
+          // EXACT replica: Apply formatting
+          dataRow.eachCell((cell, colNumber) => {
+            // Alternating row colors
+            if (currentRow % 2 === 0) {
+              cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'F8F9FA' }
+              };
+            }
+            
+            // Borders
+            cell.border = {
+              top: { style: 'thin', color: { argb: 'E1E1E1' } },
+              left: { style: 'thin', color: { argb: 'E1E1E1' } },
+              bottom: { style: 'thin', color: { argb: 'E1E1E1' } },
+              right: { style: 'thin', color: { argb: 'E1E1E1' } }
+            };
+            
+            // EXACT replica: Alignment
+            if (colNumber === 1) { // USN column - center align
+              cell.alignment = { horizontal: 'center', vertical: 'center' };
+            } else if (colNumber === 5 || colNumber === 8) { // Email columns - left align
+              cell.alignment = { horizontal: 'left', vertical: 'center' };
+            } else {
+              cell.alignment = { horizontal: 'left', vertical: 'center' };
+            }
+          });
+          
+          currentRow++;
+        }
+      });
 
-    // Download the file
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'Combined_Student_Counsellor_Data_Professional.xlsx';
-    link.click();
-    window.URL.revokeObjectURL(url);
+      // EXACT replica: Set column widths
+      const columnWidths = [15, 30, 35, 10, 40, 15, 25, 40, 20, 15];
+      columnWidths.forEach((width, index) => {
+        const colLetter = String.fromCharCode(65 + index); // A, B, C, etc.
+        worksheet.getColumn(colLetter).width = width;
+      });
+
+      // EXACT replica: Freeze header row and set height
+      worksheet.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+      worksheet.getRow(1).height = 40;
+
+      // Download the file
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'Combined Student-Counsellor Info (Year 2,3,4).xlsx';
+      link.click();
+      window.URL.revokeObjectURL(url);
+
+      setSuccess('Excel file downloaded successfully.');
+    } catch (err) {
+      setError('Error creating Excel file: ' + err.message);
+    }
   };
 
   // File upload handler
@@ -489,327 +785,186 @@ const App = () => {
     }
   };
 
-  // Home page component
-  const HomePage = () => (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="container mx-auto px-4 py-16">
-        <div className="text-center mb-16">
-          <div className="mb-8">
-            <div className="w-32 h-32 mx-auto bg-blue-600 rounded-full flex items-center justify-center mb-6">
-              <Users className="w-16 h-16 text-white" />
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif' }}>
+      {/* Header with RVCE Logo */}
+      <div className="bg-white border-b border-gray-100">
+        <div className="max-w-6xl mx-auto px-6 py-6">
+          <div className="flex items-center justify-center">
+            <img 
+              src="https://csitss.ieee-rvce.org/Logo3.png" 
+              alt="RVCE Logo" 
+              className="h-16 w-auto"
+            />
+            <div className="ml-6">
+              <h1 className="text-2xl font-semibold text-gray-900">
+                Counsellor Data Combiner
+              </h1>
+              <p className="text-gray-500 mt-1">
+                R.V. College of Engineering
+              </p>
             </div>
-          </div>
-          <h1 className="text-5xl font-bold text-gray-800 mb-4">
-            Combined Counsellors Data
-          </h1>
-          <h2 className="text-3xl font-semibold text-blue-600 mb-6">RVCE</h2>
-          <p className="text-xl text-gray-600 mb-12 max-w-2xl mx-auto">
-            Professional tool for combining student-counsellor data from multiple Excel files 
-            with advanced formatting, preview, and download capabilities.
-          </p>
-          <button
-            onClick={() => setCurrentPage('combine')}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-lg text-lg font-semibold transition-colors duration-200 shadow-lg"
-          >
-            Start Combining Data
-          </button>
-        </div>
-
-        <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-          <div className="bg-white p-6 rounded-lg shadow-lg text-center">
-            <Upload className="w-12 h-12 text-blue-600 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold mb-2">Easy Upload</h3>
-            <p className="text-gray-600">Upload Excel files for each batch year with drag & drop support</p>
-          </div>
-          <div className="bg-white p-6 rounded-lg shadow-lg text-center">
-            <Eye className="w-12 h-12 text-green-600 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold mb-2">Live Preview</h3>
-            <p className="text-gray-600">Preview combined data before downloading with full formatting</p>
-          </div>
-          <div className="bg-white p-6 rounded-lg shadow-lg text-center">
-            <Download className="w-12 h-12 text-purple-600 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold mb-2">Professional Export</h3>
-            <p className="text-gray-600">Download professionally formatted Excel with logo space</p>
           </div>
         </div>
       </div>
-    </div>
-  );
 
-  // Main combine page component
-  const CombinePage = () => (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white shadow-sm border-b">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-4">
+      {/* Main Content */}
+      <div className="flex-1 max-w-4xl mx-auto px-6 py-12">
+        
+        {/* File Upload Section */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
+          <h2 className="text-xl font-semibold text-gray-900 mb-8 text-center">
+            Upload Excel Files
+          </h2>
+          
+          <div className="grid md:grid-cols-3 gap-6">
+            {[
+              { key: 'year4', label: 'Year 4', sublabel: '2022-2026', color: 'from-red-500 to-pink-500' },
+              { key: 'year3', label: 'Year 3', sublabel: '2023-2027', color: 'from-yellow-500 to-orange-500' },
+              { key: 'year2', label: 'Year 2', sublabel: '2024-2028', color: 'from-green-500 to-emerald-500' }
+            ].map(({ key, label, sublabel, color }) => (
+              <div key={key} className="group">
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept=".xlsx"
+                    onChange={(e) => handleFileUpload(key, e.target.files[0])}
+                    className="hidden"
+                    id={`file-${key}`}
+                  />
+                  <label
+                    htmlFor={`file-${key}`}
+                    className="block cursor-pointer"
+                  >
+                    <div className="bg-white border border-gray-200 rounded-2xl p-6 hover:border-gray-300 transition-all duration-200 hover:shadow-md group-hover:scale-105">
+                      <div className="text-center">
+                        <div className={`w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-r ${color} flex items-center justify-center`}>
+                          {files[key] ? (
+                            <CheckCircle className="w-8 h-8 text-white" />
+                          ) : (
+                            <FileText className="w-8 h-8 text-white" />
+                          )}
+                        </div>
+                        <h3 className="font-semibold text-gray-900 mb-1">{label}</h3>
+                        <p className="text-sm text-gray-500 mb-4">{sublabel}</p>
+                        
+                        {files[key] ? (
+                          <div className="space-y-3">
+                            <div 
+                              className="flex items-center justify-center text-green-600 mb-2"
+                              title={files[key].name} // Tooltip with filename on hover
+                            >
+                              <CheckCircle className="w-6 h-6" />
+                            </div>
+                            <label
+                              htmlFor={`file-${key}`}
+                              className="block bg-blue-50 hover:bg-blue-100 text-blue-600 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer text-center"
+                            >
+                              Change File
+                            </label>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-blue-600 font-medium">
+                            Choose File
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex justify-center mt-8 space-x-4">
             <button
-              onClick={() => setCurrentPage('home')}
-              className="flex items-center space-x-2 text-blue-600 hover:text-blue-800"
+              onClick={combineFiles}
+              disabled={processing || (!files.year2 && !files.year3 && !files.year4)}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white px-8 py-3 rounded-full font-semibold transition-all duration-200 hover:scale-105 disabled:hover:scale-100 shadow-sm hover:shadow-md flex items-center"
             >
-              <Home className="w-5 h-5" />
-              <span>Home</span>
+              {processing ? (
+                <>
+                  <Loader className="w-5 h-5 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                'Combine Data'
+              )}
             </button>
-            <span className="text-gray-400">/</span>
-            <span className="text-gray-700 font-semibold">Combine Counsellor Data</span>
+
+            {combinedData && (
+              <button
+                onClick={downloadExcel}
+                className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-full font-semibold transition-all duration-200 hover:scale-105 shadow-sm hover:shadow-md flex items-center"
+              >
+                <Download className="w-5 h-5 mr-2" />
+                Download Excel
+              </button>
+            )}
           </div>
         </div>
-      </div>
 
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-6xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-800 mb-8">Combine Counsellor Data</h1>
-
-          {/* File Upload Section */}
-          <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <h2 className="text-xl font-semibold mb-6">Upload Excel Files by Batch</h2>
-            
-            <div className="grid md:grid-cols-3 gap-6">
-              {[
-                { key: 'year4', label: 'Year 4 (2022-2026)', color: 'bg-red-50 border-red-200' },
-                { key: 'year3', label: 'Year 3 (2023-2027)', color: 'bg-yellow-50 border-yellow-200' },
-                { key: 'year2', label: 'Year 2 (2024-2028)', color: 'bg-green-50 border-green-200' }
-              ].map(({ key, label, color }) => (
-                <div key={key} className={`border-2 border-dashed rounded-lg p-6 ${color}`}>
-                  <div className="text-center">
-                    <FileSpreadsheet className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                    <h3 className="font-semibold mb-2">{label}</h3>
-                    
-                    <input
-                      type="file"
-                      accept=".xlsx"
-                      onChange={(e) => handleFileUpload(key, e.target.files[0])}
-                      className="hidden"
-                      id={`file-${key}`}
-                    />
-                    <label
-                      htmlFor={`file-${key}`}
-                      className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm transition-colors duration-200"
-                    >
-                      Choose File
-                    </label>
-                    
-                    {files[key] && (
-                      <div className="mt-3">
-                        <div className="flex items-center justify-center text-sm text-green-600">
-                          <CheckCircle className="w-4 h-4 mr-1" />
-                          {files[key].name}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {error && (
-              <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4">
-                <div className="flex items-center text-red-700">
-                  <AlertCircle className="w-5 h-5 mr-2" />
-                  {error}
-                </div>
+        {/* Statistics */}
+        {statistics && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
+            <h3 className="text-lg font-semibold text-gray-900 mb-6 text-center">
+              Processing Summary
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-blue-600 mb-1">{statistics.totalFiles}</div>
+                <div className="text-sm text-gray-500">Files</div>
               </div>
-            )}
-
-            <div className="mt-6 text-center">
-              <button
-                onClick={combineFiles}
-                disabled={processing || (!files.year2 && !files.year3 && !files.year4)}
-                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-8 py-3 rounded-lg font-semibold transition-colors duration-200 shadow-lg"
-              >
-                {processing ? (
-                  <div className="flex items-center">
-                    <Loader className="w-5 h-5 mr-2 animate-spin" />
-                    Processing...
-                  </div>
-                ) : (
-                  'Combine Data'
-                )}
-              </button>
+              <div className="text-center">
+                <div className="text-3xl font-bold text-green-600 mb-1">{statistics.totalSheets}</div>
+                <div className="text-sm text-gray-500">Sheets</div>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl font-bold text-purple-600 mb-1">{statistics.totalRecords}</div>
+                <div className="text-sm text-gray-500">Records</div>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl font-bold text-orange-600 mb-1">{statistics.branchesProcessed.length}</div>
+                <div className="text-sm text-gray-500">Branches</div>
+              </div>
             </div>
           </div>
+        )}
 
-          {/* Statistics */}
-          {statistics && (
-            <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-              <h2 className="text-xl font-semibold mb-4">Processing Statistics</h2>
-              <div className="grid md:grid-cols-4 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{statistics.totalFiles}</div>
-                  <div className="text-sm text-gray-600">Files Processed</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{statistics.totalSheets}</div>
-                  <div className="text-sm text-gray-600">Sheets Processed</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-purple-600">{statistics.totalRecords}</div>
-                  <div className="text-sm text-gray-600">Total Records</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-orange-600">{statistics.branchesProcessed.length}</div>
-                  <div className="text-sm text-gray-600">Branches Found</div>
-                </div>
-              </div>
-              
-              <div className="mt-4">
-                <div className="text-sm text-gray-600 mb-2">Batches: {statistics.batchesProcessed.join(', ')}</div>
-                <div className="text-sm text-gray-600">Branches: {statistics.branchesProcessed.join(', ')}</div>
-              </div>
+        {/* Messages */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-6 flex items-center">
+            <AlertCircle className="w-5 h-5 text-red-500 mr-3" />
+            <span className="text-red-700">{error}</span>
+          </div>
+        )}
+
+        {success && (
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6 flex items-center">
+            <CheckCircle className="w-5 h-5 text-green-500 mr-3" />
+            <span className="text-green-700">{success}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Footer with Coding Club Logo */}
+      <div className="bg-white border-t border-gray-100 mt-12">
+        <div className="max-w-4xl mx-auto px-6 py-8">
+          <div className="flex flex-col items-center space-y-4">
+            <img 
+              src="https://avatars.githubusercontent.com/u/54234255?v=4" 
+              alt="Coding Club Logo" 
+              className="h-24 w-24 rounded-2xl shadow-lg"
+            />
+            <div className="text-center">
+              <p className="text-lg font-semibold text-gray-900">Coding Club RVCE</p>
             </div>
-          )}
-
-          {/* Preview and Download */}
-          {combinedData && (
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <div className="flex justify-between items-center mb-6">
-                <div className="flex items-center space-x-4">
-                  <h2 className="text-xl font-semibold">Data Preview</h2>
-                  <div className="flex bg-gray-100 rounded-lg p-1">
-                    <button
-                      onClick={() => setPreviewMode('table')}
-                      className={`flex items-center px-3 py-1 rounded text-sm transition-colors ${
-                        previewMode === 'table' 
-                          ? 'bg-white shadow text-blue-600' 
-                          : 'text-gray-600 hover:text-gray-800'
-                      }`}
-                    >
-                      <Table className="w-4 h-4 mr-1" />
-                      Table View
-                    </button>
-                    <button
-                      onClick={handleExcelViewClick}
-                      className={`flex items-center px-3 py-1 rounded text-sm transition-colors ${
-                        previewMode === 'excel' 
-                          ? 'bg-white shadow text-green-600' 
-                          : 'text-gray-600 hover:text-gray-800'
-                      }`}
-                    >
-                      <Grid3X3 className="w-4 h-4 mr-1" />
-                      Google Sheets View
-                    </button>
-                  </div>
-                </div>
-                <button
-                  onClick={downloadExcel}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors duration-200 shadow-lg flex items-center"
-                >
-                  <Download className="w-5 h-5 mr-2" />
-                  Download Excel
-                </button>
-              </div>
-
-              <div className="preview-container">
-                {previewMode === 'table' ? (
-                  <div className="overflow-x-auto">
-                    <div className="max-h-96 overflow-y-auto border rounded-lg">
-                      <table className="w-full text-sm">
-                        <thead className="bg-blue-600 text-white sticky top-0">
-                          <tr>
-                            <th className="px-4 py-2 text-left">USN</th>
-                            <th className="px-4 py-2 text-left">Full Name</th>
-                            <th className="px-4 py-2 text-left">Branch</th>
-                            <th className="px-4 py-2 text-left">Section</th>
-                            <th className="px-4 py-2 text-left">Email</th>
-                            <th className="px-4 py-2 text-left">Counsellor</th>
-                            <th className="px-4 py-2 text-left">Batch</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {previewData.map((item, index) => {
-                            if (item.type === 'batch_separator') {
-                              return (
-                                <tr key={index} className="bg-blue-100">
-                                  <td colSpan="7" className="px-4 py-3 font-bold text-center text-blue-800">
-                                    {item.text}
-                                  </td>
-                                </tr>
-                              );
-                            } else if (item.type === 'branch_separator') {
-                              return (
-                                <tr key={index} className="bg-green-100">
-                                  <td colSpan="7" className="px-4 py-2 font-semibold text-center text-green-800">
-                                    {item.text}
-                                  </td>
-                                </tr>
-                              );
-                            } else {
-                              return (
-                                <tr key={index} className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                                  <td className="px-4 py-2 border-b">{item.USN}</td>
-                                  <td className="px-4 py-2 border-b">{item['Full Name']}</td>
-                                  <td className="px-4 py-2 border-b">{item['Student Branch']}</td>
-                                  <td className="px-4 py-2 border-b">{item.Section}</td>
-                                  <td className="px-4 py-2 border-b">{item['Student Email ID']}</td>
-                                  <td className="px-4 py-2 border-b">{item['Counsellor Name']}</td>
-                                  <td className="px-4 py-2 border-b">{item['Student Batch']}</td>
-                                </tr>
-                              );
-                            }
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                    {combinedData.length > 50 && (
-                      <p className="text-sm text-gray-600 mt-2 text-center">
-                        Showing first 50 items. Full data will be included in download.
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="border rounded-lg overflow-hidden">
-                    <div className="bg-gray-50 p-3 border-b">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm text-gray-600">
-                          Google Sheets preview with full Excel functionality
-                        </p>
-                        <div className="text-xs text-gray-500">
-                          Interactive spreadsheet view
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {sheetLoading ? (
-                      <div className="flex items-center justify-center h-96 bg-gray-50">
-                        <div className="text-center">
-                          <Loader className="w-8 h-8 animate-spin mx-auto mb-2 text-green-600" />
-                          <p className="text-gray-600">Creating Google Sheet...</p>
-                        </div>
-                      </div>
-                    ) : googleSheetUrl ? (
-                      <div className="h-96">
-                        <iframe
-                          src={`${googleSheetUrl}&rm=embedded`}
-                          width="100%"
-                          height="100%"
-                          frameBorder="0"
-                          className="rounded-b-lg"
-                          title="Google Sheets Preview"
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center h-96 bg-gray-50">
-                        <div className="text-center">
-                          <p className="text-gray-600 mb-4">Click "Google Sheets View" to create interactive preview</p>
-                          <button
-                            onClick={handleExcelViewClick}
-                            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
-                          >
-                            Create Google Sheet
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
   );
-
-  return currentPage === 'home' ? <HomePage /> : <CombinePage />;
 };
 
 export default App;
