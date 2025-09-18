@@ -18,7 +18,6 @@
 
   <h3>Professional Excel Processing Tool</h3>
   <p>Efficiently combine student-counsellor data from multiple Excel files with advanced formatting and download capabilities</p>
-  <p>Now with robust counsellor email & phone support, hyperlink extraction, and bug fixes.</p>
   
 [![Live Demo](https://img.shields.io/badge/Live-Demo-2563eb?style=for-the-badge&logo=vercel)](https://combined-counsellor-data-rvce.vercel.app)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://reactjs.org/)
@@ -35,13 +34,6 @@
 The RVCE Counsellor Data Combiner is a sophisticated web-based tool designed specifically for R.V. College of Engineering to streamline the process of combining student–counsellor information from multiple Excel files, across different sheets within those files, and across different academic years. This tool maintains data integrity while providing professional formatting and comprehensive processing capabilities.
 
 ## Key Features
-
-### 🆕 Enhancements in this Fork
-- Added **Counsellor Phone Number** column in output Excel  
-- Robust header alias mapping (handles typos, spacing, counselor vs counsellor, etc.)  
-- Improved email & phone extraction (supports `mailto:` and `tel:` hyperlinks, fuzzy phone formats)  
-- Fixed Excel warnings for phone numbers stored as text  
-
 
 ### 🔄 **Multi-Year Data Processing**
 - **Year 4 (2022-2026)** - Final year students
