@@ -26,87 +26,189 @@ const App = () => {
     }
   }, [error, success]);
 
-  // Enhanced Excel cell value extraction specifically for emails and complex objects
+  // ---------- HELPER: normalize header keys for tolerant matching ----------
+  const normalizeKey = (s) => {
+    return String(s || '')
+      .toUpperCase()
+      .replace(/\u00A0/g, ' ')          // non-break space
+      .replace(/[^\w\s]/g, ' ')         // remove punctuation (keep letters+digits+underscore)
+      .replace(/\s+/g, ' ')             // collapse multiple spaces
+      .trim();
+  };
+
+  // RAW mapping with many aliases (canonical values on RHS)
+  const RAW_COLUMN_MAPPING = {
+    // canonical -> possible variants map to canonical value
+    'USN': 'USN',
+
+    // Student identifiers / contact
+    'FULL NAME': 'Full Name',
+    'STUDENT NAME': 'Full Name',
+    'NAME': 'Full Name',
+
+    'BRANCH': 'Branch',
+    'BRANCH ': 'Branch',
+    'DEPARTMENT ': 'Branch',
+    'DEPARTMENT': 'Branch',
+    'SECTION': 'Section',
+
+    // Student email aliases
+    'EMAIL': 'Email',
+    'E MAIL': 'Email',
+    'EMAIL ID': 'Email',
+    'STUDENT EMAIL': 'Email',
+    'STUDENT EMAIL ID': 'Email',
+    'EMAIL ID OF STUDENTS': 'Email',
+
+    // Student phone aliases
+    'PHONE NUMBER': 'Phone Number',
+    'PHONE': 'Phone Number',
+    'PHONE NO': 'Phone Number',
+    'PHONE NUMBER STUDENT': 'Phone Number',
+    'MOBILE': 'Phone Number',
+    'MOBILE NUMBER': 'Phone Number',
+    'MOBILE NO': 'Phone Number',
+    'CONTACT': 'Phone Number',
+    'CONTACT NUMBER': 'Phone Number',
+
+    // Counsellor name
+    'COUNSELLOR': 'Counsellor',
+    'COUNSELOR': 'Counsellor',
+    'COUNSELLOR NAME': 'Counsellor',
+    'COUNSELOR NAME': 'Counsellor',
+
+    // Counsellor email — MANY aliases
+    'E MAIL ID OF THE COUNSELLORS': 'Counsellor Email',
+    'E MAIL ID OF THE COUNSELLOR': 'Counsellor Email',
+    'EMAIL ID OF THE COUNSELLORS': 'Counsellor Email',
+    'EMAIL ID OF THE COUNSELLOR': 'Counsellor Email',
+    'COUNSELLOR EMAIL': 'Counsellor Email',
+    'COUNSELOR EMAIL': 'Counsellor Email',
+    'COUNSELLOR MAIL': 'Counsellor Email',
+    'COUNSELLOR MAIL ID': 'Counsellor Email',
+    'COUNSELLOR E MAIL': 'Counsellor Email',
+    'E-MAIL ID OF THE COUNSELLORS': 'Counsellor Email',
+    //'EMAIL ID': 'Email', // fallback general
+
+    // Counsellor PHONE (NEW)
+    'COUNSELLOR PHONE': 'Counsellor Phone',
+    'COUNSELOR PHONE': 'Counsellor Phone',
+    'COUNSELLOR PHONE NUMBER': 'Counsellor Phone',
+    'COUNSELLOR MOBILE': 'Counsellor Phone',
+    'COUNSELLOR MOBILE NO': 'Counsellor Phone',
+    'COUNSELLOR MOBILE NUMBER': 'Counsellor Phone',
+    'COUNSELLOR CONTACT': 'Counsellor Phone',
+    'COUNSELLOR CONTACT NO': 'Counsellor Phone',
+    'COUNSELLOR CONTACT NUMBER': 'Counsellor Phone',
+    'COUNSELLOR TEL': 'Counsellor Phone',
+    'COUNSELLOR TELEPHONE': 'Counsellor Phone',
+    'TEL OF COUNSELLOR': 'Counsellor Phone',
+    'MOBILE NO OF THE COUNSELLOR': 'Counsellor Phone',
+    'PHONE NO OF THE COUNSELLOR': 'Counsellor Phone',
+
+    // Some common misspellings / variants
+    'COUNSELOR MOBILE': 'Counsellor Phone',
+    'COUNSELOR CONTACT': 'Counsellor Phone',
+    'COUNSELOR CONTACT NUMBER': 'Counsellor Phone',
+    'TEL OF COUNSELOR': 'Counsellor Phone',
+
+    // Counsellor Department
+    'COUNSELLOR DEPT': 'Counsellor Department',
+    'COUNSELLOR DEPT.': 'Counsellor Department',
+    'COUNSELLOR BRANCH': 'Counsellor Department',
+    'COUNSELLOR DEPARTMENT': 'Counsellor Department',
+    'COUNSELOR DEPARTMENT': 'Counsellor Department',
+
+    // Batch
+    'BATCH': 'Batch',
+    'YEAR': 'Batch',
+    'BATCH(20XX-20XX)': 'Batch',
+  };
+
+  // Build normalized mapping for fast lookup
+  const NORMALIZED_COLUMN_MAPPING = {};
+  Object.keys(RAW_COLUMN_MAPPING).forEach(k => {
+    NORMALIZED_COLUMN_MAPPING[normalizeKey(k)] = RAW_COLUMN_MAPPING[k];
+  });
+
+  // Enhanced Excel cell value extraction with tel: and better phone detection
   const extractCellValue = (cellValue) => {
-    if (cellValue === null || cellValue === undefined) {
-      return '';
-    }
-    
-    // If it's already a simple value
+    if (cellValue === null || cellValue === undefined) return '';
+
+    // If it's already a simple primitive value
     if (typeof cellValue !== 'object') {
-      return String(cellValue).trim();
+      const str = String(cellValue).trim();
+      // quick phone detection
+      const phoneMatch = str.match(/(\+?\d[\d\-\s\(\)]{6,}\d)/);
+      if (phoneMatch && phoneMatch[0].replace(/\D/g, '').length >= 6) return phoneMatch[0].trim();
+      return str;
     }
-    
-    // Handle Excel Date objects
-    if (cellValue instanceof Date) {
-      return cellValue.toLocaleDateString();
-    }
-    
-    // Handle Excel hyperlink objects (common for emails)
+
+    // If it's an actual Date
+    if (cellValue instanceof Date) return cellValue.toLocaleDateString();
+
+    // ExcelJS hyperlink objects or objects with hyperlink property
     if (cellValue.hyperlink) {
-      // Email hyperlinks often have the email in the hyperlink property
-      if (cellValue.text) {
-        return String(cellValue.text).trim();
-      }
+      // cellValue.hyperlink might be string like mailto: or tel:
       if (typeof cellValue.hyperlink === 'string') {
-        // Extract email from mailto: links
-        return cellValue.hyperlink.replace('mailto:', '').trim();
+        // mailto:
+        if (cellValue.hyperlink.startsWith('mailto:')) {
+          return cellValue.hyperlink.replace('mailto:', '').trim();
+        }
+        // tel:
+        if (cellValue.hyperlink.startsWith('tel:')) {
+          return cellValue.hyperlink.replace('tel:', '').trim();
+        }
+        // Otherwise return display text if available
+        return (cellValue.text || cellValue.hyperlink).toString().trim();
       }
-      if (cellValue.hyperlink.text) {
-        return String(cellValue.hyperlink.text).trim();
-      }
-      return String(cellValue.hyperlink).trim();
+      // hyperlink can be object: { text: 'abc', tooltip: '...' }
+      if (cellValue.hyperlink.text) return String(cellValue.hyperlink.text).trim();
     }
-    
-    // Handle Excel rich text objects
+
+    // Excel rich text arrays
     if (cellValue.richText && Array.isArray(cellValue.richText)) {
       return cellValue.richText.map(rt => rt.text || '').join('').trim();
     }
-    
-    // Handle Excel formula objects
+
+    // Formula objects
     if (cellValue.formula !== undefined) {
       return String(cellValue.result || cellValue.formula || '').trim();
     }
-    
-    // Handle objects with result property
-    if (cellValue.result !== undefined) {
-      return String(cellValue.result).trim();
+
+    // Objects with result/text/value keys
+    if (cellValue.result !== undefined) return String(cellValue.result).trim();
+    if (cellValue.text !== undefined) return String(cellValue.text).trim();
+    if (cellValue.value !== undefined) return String(cellValue.value).trim();
+
+    // Fallback: stringify but try to extract email/phone
+    try {
+      const asString = JSON.stringify(cellValue);
+      if (asString.includes('@')) {
+        const emailMatch = asString.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig);
+        if (emailMatch) return emailMatch[0].trim();
+      }
+      const phoneMatch = asString.match(/(\+?\d[\d\-\s\(\)]{6,}\d)/);
+      if (phoneMatch) return phoneMatch[0].trim();
+    } catch (e) {
+      // ignore stringify failures
     }
-    
-    // Handle objects with text property
-    if (cellValue.text !== undefined) {
-      return String(cellValue.text).trim();
-    }
-    
-    // Handle objects with value property
-    if (cellValue.value !== undefined) {
-      return String(cellValue.value).trim();
-    }
-    
-    // For any other object, try to extract meaningful content
-    if (cellValue.toString && cellValue.toString() !== '[object Object]') {
-      return String(cellValue).trim();
-    }
-    
-    // Last resort: try to find any string property in the object
-    if (typeof cellValue === 'object') {
-      for (const key in cellValue) {
-        if (typeof cellValue[key] === 'string' && cellValue[key].includes('@')) {
-          return cellValue[key].trim(); // Likely an email
-        }
-        if (typeof cellValue[key] === 'string' && cellValue[key].length > 0) {
-          return cellValue[key].trim();
-        }
+
+    // Last resort - find any string property
+    for (const key in cellValue) {
+      if (typeof cellValue[key] === 'string' && cellValue[key].length > 0) {
+        if (cellValue[key].includes('@')) return cellValue[key].trim();
+        return cellValue[key].trim();
       }
     }
-    
+
     return '';
   };
 
   // EXACT replica of Python script's clean_value function with enhanced Excel object handling
   const cleanValue = (value) => {
     const extractedValue = extractCellValue(value);
-    
+
     if (!extractedValue || extractedValue === '' || extractedValue === '0' || 
         String(extractedValue).toLowerCase() === 'nan' || 
         String(extractedValue).toLowerCase() === 'none' || 
@@ -122,7 +224,7 @@ const App = () => {
       // AI/ML branches - distinguish between the two different programs
       'CSE(AIML)': 'Computer Science Engineering (AI & ML)',  // Older program
       'AIML': 'Artificial Intelligence & Machine Learning',    // New dedicated program (2024-2028)
-      
+
       // Regular branches with correct names
       'CSE': 'Computer Science Engineering',
       'Data Science': 'CSE (Data Science)',
@@ -162,12 +264,12 @@ const App = () => {
       console.warn(`Sheet '${sheetName}' is empty`);
       return false;
     }
-    
+
     if (data.length < 2) {
       console.warn(`Sheet '${sheetName}' has insufficient rows (${data.length})`);
       return false;
     }
-    
+
     // Look for USN column indicator
     let hasUsn = false;
     for (const row of data) {
@@ -176,12 +278,12 @@ const App = () => {
         break;
       }
     }
-    
+
     if (!hasUsn) {
       console.warn(`Sheet '${sheetName}' does not contain USN column`);
       return false;
     }
-    
+
     // Check if there's actual student data
     let usnPatternFound = false;
     for (const row of data) {
@@ -195,135 +297,96 @@ const App = () => {
       }
       if (usnPatternFound) break;
     }
-    
+
     if (!usnPatternFound) {
       console.warn(`Sheet '${sheetName}' does not contain valid student data`);
       return false;
     }
-    
+
     return true;
   };
 
-  // EXACT replica of Python script's process_sheet function
+  // Updated processSheet with normalized headers and Counsellor Phone support
   const processSheet = (worksheet, sheetName, batchYear, fileName) => {
     const data = [];
-    
-    // Convert worksheet to array format with direct cell hyperlink access
-    worksheet.eachRow((row, rowNumber) => {
+
+    worksheet.eachRow((row) => {
       const rowData = [];
       row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
         let cellValue = '';
-        
-        // DIRECT HYPERLINK CHECK - ExcelJS stores hyperlinks separately
+        // handle direct hyperlink first
         if (cell.hyperlink) {
-          // Get the display text from hyperlink
           if (cell.value && typeof cell.value === 'string') {
             cellValue = cell.value;
           } else if (cell.text) {
             cellValue = cell.text;
           } else if (typeof cell.hyperlink === 'string') {
-            cellValue = cell.hyperlink.replace('mailto:', '');
+            // mailto: and tel: handled in extractCellValue but quick fallback here too
+            cellValue = cell.hyperlink.replace('mailto:', '').replace('tel:', '');
           } else if (cell.hyperlink.text) {
             cellValue = cell.hyperlink.text;
           } else {
-            cellValue = String(cell.hyperlink).replace('mailto:', '');
+            cellValue = String(cell.hyperlink);
           }
         } else {
-          // Regular cell value extraction
           cellValue = extractCellValue(cell.value);
         }
-        
         rowData[colNumber - 1] = cellValue || '';
       });
       data.push(rowData);
     });
-    
-    if (data.length === 0) {
-      console.warn(`Empty sheet: ${sheetName} in ${fileName}`);
-      return [];
-    }
-    
-    if (data.length <= 1) {
-      console.warn(`Sheet ${sheetName} has insufficient data`);
-      return [];
-    }
-    
-    // Find the actual header row
-    let headerRow = null;
-    for (let idx = 0; idx < data.length; idx++) {
-      if (data[idx].some(cell => String(cell).toUpperCase().includes('USN'))) {
-        headerRow = idx;
+
+    if (data.length === 0) return [];
+    if (data.length <= 1) return [];
+
+    // Find header row (contains USN)
+    let headerRowIndex = null;
+    for (let i = 0; i < data.length; i++) {
+      if (data[i].some(cell => String(cell).toUpperCase().includes('USN'))) {
+        headerRowIndex = i;
         break;
       }
     }
-    
-    if (headerRow === null) {
-      console.warn(`No header row found in sheet: ${sheetName}`);
-      return [];
-    }
-    
-    // Set proper headers and get data
-    const headers = data[headerRow];
-    let rows = data.slice(headerRow + 1);
-    
-    // Clean and filter data - remove empty rows
+    if (headerRowIndex === null) return [];
+
+    const headers = data[headerRowIndex].map(h => String(h || '').trim());
+    let rows = data.slice(headerRowIndex + 1);
+
+    // Filter empty rows
     rows = rows.filter(row => row.some(cell => cell && String(cell).trim() !== ''));
-    
-    if (rows.length === 0) {
-      console.warn(`No valid data rows in sheet: ${sheetName}`);
-      return [];
-    }
-    
-    // EXACT replica of Python script's column mapping
-    const columnMapping = {
-      'USN': 'USN',
-      'FULL NAME': 'Full Name',
-      'BRANCH ': 'Branch',
-      'BRANCH': 'Branch',
-      'SECTION': 'Section',
-      'EMAIL': 'Email',
-      'PHONE NUMBER': 'Phone Number',
-      'COUNSELLOR': 'Counsellor',
-      'E-Mail ID of the Counsellors': 'Counsellor Email',
-      'COUNSELLOR DEPT.': 'Counsellor Department',
-      'BATCH(20XX-20XX)': 'Batch',
-      'BATCH': 'Batch'
-    };
-    
-    // Process rows into records
+    if (rows.length === 0) return [];
+
+    // Normalize headers and map to canonical names or keep original header as fallback
+    const canonicalHeaders = headers.map(h => {
+      const key = normalizeKey(h);
+      return NORMALIZED_COLUMN_MAPPING[key] || h;
+    });
+
+    // Build records
     const records = rows.map(row => {
       const record = {};
-      
-      // Map columns based on headers
-      headers.forEach((header, index) => {
-        const standardHeader = columnMapping[String(header).toUpperCase()] || header;
+      canonicalHeaders.forEach((standardHeader, index) => {
         record[standardHeader] = cleanValue(row[index]);
       });
-      
-      // Ensure required columns exist
+
+      // Ensure required and optional columns exist (use canonical names)
       const requiredColumns = ['USN', 'Full Name', 'Branch', 'Email', 'Phone Number', 'Counsellor', 'Batch'];
-      requiredColumns.forEach(col => {
-        if (!record[col]) record[col] = '';
-      });
-      
-      // Add missing columns with empty values
-      const allColumns = ['USN', 'Full Name', 'Branch', 'Section', 'Email', 
-                         'Phone Number', 'Counsellor', 'Counsellor Email', 'Counsellor Department', 'Batch'];
-      allColumns.forEach(col => {
-        if (!record[col]) record[col] = '';
-      });
-      
-      // Add normalized branch name
+      requiredColumns.forEach(col => { if (!record[col]) record[col] = ''; });
+
+      // Add missing counsellor-specific columns
+      const allColumns = ['USN', 'Full Name', 'Branch', 'Section', 'Email',
+        'Phone Number', 'Counsellor', 'Counsellor Email', 'Counsellor Phone', 'Counsellor Department', 'Batch'];
+      allColumns.forEach(col => { if (!record[col]) record[col] = ''; });
+
+      // Add normalized branch
       record['Normalized Branch'] = normalizeBranchName(record['Branch'] || '');
-      
-      // Update batch info if missing
-      if (!record['Batch'] || record['Batch'] === '') {
-        record['Batch'] = batchYear;
-      }
-      
+
+      // Ensure Batch value if missing
+      if (!record['Batch'] || record['Batch'] === '') record['Batch'] = batchYear;
+
       return record;
-    }).filter(record => record['USN'] && record['USN'] !== '');
-    
+    }).filter(r => r['USN'] && r['USN'] !== '');
+
     console.log(`Processed sheet '${sheetName}': ${records.length} records`);
     return records;
   };
@@ -397,11 +460,11 @@ const App = () => {
                 } else if (cell.text) {
                   cellValue = cell.text;
                 } else if (typeof cell.hyperlink === 'string') {
-                  cellValue = cell.hyperlink.replace('mailto:', '');
+                  cellValue = cell.hyperlink.replace('mailto:', '').replace('tel:', '');
                 } else if (cell.hyperlink.text) {
                   cellValue = cell.hyperlink.text;
                 } else {
-                  cellValue = String(cell.hyperlink).replace('mailto:', '');
+                  cellValue = String(cell.hyperlink).replace('mailto:', '').replace('tel:', '');
                 }
               } else {
                 cellValue = extractCellValue(cell.value);
@@ -473,8 +536,17 @@ const App = () => {
       setProcessing(false);
     }
   };
+  // Add this helper ABOVE downloadExcel (next to cleanValue)
+const asNumberIfPossible = (val) => {
+  const digits = (val || '').replace(/\D/g, ''); // strip non-digits
+  if (digits.length >= 6 && digits.length <= 15) {
+    return Number(digits); // Excel will treat this as a number
+  }
+  return val; // fallback: keep as string (e.g., if it has + or spaces)
+};
 
-  // EXACT replica of Python script's Excel formatting
+
+  // UPDATED downloadExcel with Counsellor Phone Number column
   const downloadExcel = async () => {
     if (!combinedData) return;
 
@@ -482,10 +554,11 @@ const App = () => {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Combined Data');
 
-      // EXACT replica: Professional column headers
+      // New headers with Counsellor Phone Number inserted before Counsellor Department
       const headers = [
-        'USN', 'Full Name', 'Student Branch', 'Section', 'Student Email ID', 
-        'Phone Number', 'Counsellor Name', 'Counsellor Email ID', 
+        'USN', 'Full Name', 'Student Branch', 'Section', 'Student Email ID',
+        'Phone Number', 'Counsellor Name', 'Counsellor Email ID',
+        'Counsellor Phone Number', // new
         'Counsellor Department', 'Student Batch'
       ];
 
@@ -512,11 +585,11 @@ const App = () => {
       currentRow++;
 
       // EXACT replica: Row 2 - Empty row for spacing
-      worksheet.mergeCells(`A${currentRow}:J${currentRow}`);
+      worksheet.mergeCells(`A${currentRow}:K${currentRow}`);
       currentRow++;
 
       // EXACT replica: Rows 3-8 - Logo space with original size and centered positioning
-      worksheet.mergeCells(`A${currentRow}:J${currentRow + 5}`);
+      worksheet.mergeCells(`A${currentRow}:K${currentRow + 5}`);
       const logoCell = worksheet.getCell(`A${currentRow}`);
       
       // Fetch and add RVCE logo with original size - SAFE METHOD
@@ -572,7 +645,7 @@ const App = () => {
       combinedData.forEach(item => {
         if (item.type === 'batch_separator') {
           // EXACT replica: Batch separator with merged cells
-          worksheet.mergeCells(`A${currentRow}:J${currentRow}`);
+          worksheet.mergeCells(`A${currentRow}:K${currentRow}`);
           const batchCell = worksheet.getCell(`A${currentRow}`);
           batchCell.value = item.text;
           batchCell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 16 };
@@ -593,7 +666,7 @@ const App = () => {
           currentRow++; // Empty row after batch separator
         } else if (item.type === 'branch_separator') {
           // EXACT replica: Branch separator with merged cells
-          worksheet.mergeCells(`A${currentRow}:J${currentRow}`);
+          worksheet.mergeCells(`A${currentRow}:K${currentRow}`);
           const branchCell = worksheet.getCell(`A${currentRow}`);
           branchCell.value = item.text;
           branchCell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 14 };
@@ -620,9 +693,10 @@ const App = () => {
             cleanValue(item['Normalized Branch']),  // Student Branch
             cleanValue(item['Section']),
             cleanValue(item['Email']),  // Student Email ID
-            cleanValue(item['Phone Number']),
+            asNumberIfPossible(cleanValue(item['Phone Number'])), 
             cleanValue(item['Counsellor']),  // Counsellor Name
             cleanValue(item['Counsellor Email']),  // Counsellor Email ID
+            asNumberIfPossible(cleanValue(item['Counsellor Phone'])),
             cleanValue(item['Counsellor Department']),
             cleanValue(item['Batch'])  // Student Batch
           ];
@@ -662,8 +736,8 @@ const App = () => {
         }
       });
 
-      // EXACT replica: Set column widths
-      const columnWidths = [15, 30, 35, 10, 40, 15, 25, 40, 20, 15];
+      // Updated column widths for 11 columns
+      const columnWidths = [15, 30, 35, 10, 40, 15, 25, 40, 18, 20, 15];
       columnWidths.forEach((width, index) => {
         const colLetter = String.fromCharCode(65 + index); // A, B, C, etc.
         worksheet.getColumn(colLetter).width = width;
@@ -711,6 +785,22 @@ const App = () => {
       setError('Please upload only .xlsx files');
     }
   };
+
+  // DEV TEST: run in browser console or call from a temporary button
+  const runAliasTests = () => {
+    const testHeadersList = [
+      ['USN', 'Full Name', 'Branch', 'Section', 'E-Mail ID of the Counsellors', 'Phone Number', 'Counsellor', 'E-mail', 'Counsellor Mobile', 'Counsellor Dept.', 'Batch(2022-2026)'],
+      ['USN', 'Name', 'BRANCH', 'SECTION', 'EMAIL ID', 'MOBILE', 'COUNSELLOR NAME', 'COUNSELLOR EMAIL', 'COUNSELLOR PHONE', 'COUNSELLOR DEPT', 'BATCH'],
+      ['USN', 'FULL NAME', 'BRANCH', 'SECTION', 'STUDENT EMAIL', 'PHONE', 'COUNSELOR', 'EMAIL ID OF THE COUNSELLORS', 'TEL OF COUNSELLOR', 'COUNSELLOR DEPARTMENT', 'BATCH(20XX-20XX)'],
+    ];
+
+    for (const headers of testHeadersList) {
+      const canonical = headers.map(h => NORMALIZED_COLUMN_MAPPING[normalizeKey(h)] || h);
+      console.log('IN:', headers);
+      console.log('OUT canonical headers:', canonical);
+    }
+  };
+  window.runAliasTests = runAliasTests; // call runAliasTests() in console
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif' }}>
