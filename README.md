@@ -27,7 +27,7 @@
 
 ## 📋 Overview
 
-The **RVCE Counsellor Data Combiner** is a sophisticated web-based tool designed specifically for R.V. College of Engineering to streamline the process of combining student-counsellor information from multiple Excel files and across different sheets within thsoe files and also across different academic years. This tool maintains data integrity while providing professional formatting and comprehensive processing capabilities.
+The RVCE Counsellor Data Combiner is a sophisticated web-based tool designed specifically for R.V. College of Engineering to streamline the process of combining student–counsellor information from multiple Excel files, across different sheets within those files, and across different academic years. This tool maintains data integrity while providing professional formatting and comprehensive processing capabilities.
 
 ## Key Features
 
